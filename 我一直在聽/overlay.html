@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100vw; height: 100vh; background: transparent; overflow: hidden; }
+
+  #wrap { position: fixed; bottom: 24px; left: 24px; }
+
+  /* ── 標準卡片 ── */
+  #card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px 12px 12px; background: #0f0f14e0;
+    border-radius: 14px; min-width: 220px; max-width: 380px;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  #card.hidden { opacity: 0; transform: translateY(8px); pointer-events: none; }
+
+  #album {
+    width: 48px; height: 48px; border-radius: 8px;
+    background: linear-gradient(135deg, #7c5af0, #a855f7);
+    flex-shrink: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 22px; overflow: hidden;
+  }
+  #album img { width: 100%; height: 100%; object-fit: cover; }
+  #info { flex: 1; min-width: 0; overflow: hidden; }
+  #tag { font-size: 9px; text-transform: uppercase; letter-spacing: 1.2px; color: #7c5af0; margin-bottom: 2px; }
+  #song { font-size: 14px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #artist { font-size: 11px; color: #aaa; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #progBar { height: 3px; background: rgba(255,255,255,0.12); border-radius: 2px; margin-top: 6px; display: none; }
+  #progFill { height: 100%; background: #7c5af0; border-radius: 2px; width: 0%; transition: width 1s linear; }
+  #eq { display: flex; align-items: flex-end; gap: 2px; height: 18px; flex-shrink: 0; }
+  #eq span { width: 3px; border-radius: 2px; background: #7c5af0; animation: eq-bounce 0.8s infinite ease-in-out alternate; }
+  #eq span:nth-child(1) { height: 8px;  animation-delay: 0s;    }
+  #eq span:nth-child(2) { height: 14px; animation-delay: 0.1s;  }
+  #eq span:nth-child(3) { height: 10px; animation-delay: 0.2s;  }
+  #eq span:nth-child(4) { height: 16px; animation-delay: 0.05s; }
+  @keyframes eq-bounce { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }
+
+  /* 跑馬燈 */
+  #info.marquee #song { white-space: nowrap; overflow: visible; animation: marquee 12s linear infinite; }
+  @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+
+  /* ── 寬版卡片 ── */
+  #cardWide {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px 10px 10px; background: #0f0f14e0;
+    border-radius: 14px; min-width: 320px; max-width: 520px;
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  #cardWide.hidden { opacity: 0; transform: translateY(8px); pointer-events: none; }
+
+  #wideAlbum {
+    width: 52px; height: 52px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; overflow: hidden;
+    background: linear-gradient(135deg, #7c5af0, #a855f7);
+  }
+  #wideAlbum img { width: 52px; height: 52px; object-fit: cover; border-radius: 8px; }
+  #wideInfo { flex: 1; min-width: 0; margin-right: 4px; }
+  #wideSong { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #wideArtist { font-size: 11px; color: #aaa; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #wideProgBar { height: 2px; background: rgba(255,255,255,0.12); border-radius: 2px; margin-top: 6px; display: none; }
+  #wideProgFill { height: 100%; background: #7c5af0; border-radius: 2px; width: 0%; transition: width 1s linear; }
+
+  #wideWave { display: flex; align-items: center; gap: 2px; height: 36px; flex-shrink: 0; }
+  .wb { width: 2px; border-radius: 1px; background: #7c5af0; }
+  .wb:nth-child(1)  { height: 6px;  animation: wb 0.6s 0.00s ease-in-out infinite alternate; }
+  .wb:nth-child(2)  { height: 14px; animation: wb 0.6s 0.05s ease-in-out infinite alternate; }
+  .wb:nth-child(3)  { height: 22px; animation: wb 0.6s 0.10s ease-in-out infinite alternate; }
+  .wb:nth-child(4)  { height: 10px; animation: wb 0.6s 0.15s ease-in-out infinite alternate; }
+  .wb:nth-child(5)  { height: 30px; animation: wb 0.6s 0.20s ease-in-out infinite alternate; }
+  .wb:nth-child(6)  { height: 18px; animation: wb 0.6s 0.25s ease-in-out infinite alternate; }
+  .wb:nth-child(7)  { height: 8px;  animation: wb 0.6s 0.08s ease-in-out infinite alternate; }
+  .wb:nth-child(8)  { height: 26px; animation: wb 0.6s 0.12s ease-in-out infinite alternate; }
+  .wb:nth-child(9)  { height: 16px; animation: wb 0.6s 0.18s ease-in-out infinite alternate; }
+  .wb:nth-child(10) { height: 32px; animation: wb 0.6s 0.22s ease-in-out infinite alternate; }
+  .wb:nth-child(11) { height: 12px; animation: wb 0.6s 0.03s ease-in-out infinite alternate; }
+  .wb:nth-child(12) { height: 20px; animation: wb 0.6s 0.16s ease-in-out infinite alternate; }
+  .wb:nth-child(13) { height: 28px; animation: wb 0.6s 0.09s ease-in-out infinite alternate; }
+  .wb:nth-child(14) { height: 8px;  animation: wb 0.6s 0.24s ease-in-out infinite alternate; }
+  .wb:nth-child(15) { height: 18px; animation: wb 0.6s 0.06s ease-in-out infinite alternate; }
+  .wb:nth-child(16) { height: 30px; animation: wb 0.6s 0.14s ease-in-out infinite alternate; }
+  .wb:nth-child(17) { height: 12px; animation: wb 0.6s 0.19s ease-in-out infinite alternate; }
+  .wb:nth-child(18) { height: 24px; animation: wb 0.6s 0.07s ease-in-out infinite alternate; }
+  .wb:nth-child(19) { height: 16px; animation: wb 0.6s 0.23s ease-in-out infinite alternate; }
+  .wb:nth-child(20) { height: 6px;  animation: wb 0.6s 0.11s ease-in-out infinite alternate; }
+  @keyframes wb { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+
+  #wideTime {
+    font-size: 11px; color: #aaa; white-space: nowrap;
+    margin-left: 10px; font-variant-numeric: tabular-nums; flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+
+  <!-- 標準卡片 -->
+  <div id="card" class="hidden">
+    <div id="album">🎵</div>
+    <div id="info">
+      <div id="tag">Now Playing</div>
+      <div id="song">—</div>
+      <div id="artist">—</div>
+      <div id="progBar"><div id="progFill"></div></div>
+    </div>
+    <div id="eq">
+      <span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <!-- 寬版卡片（跟標準卡片並排，不是巢狀） -->
+  <div id="cardWide" class="hidden" style="display:none">
+    <div id="wideAlbum">🎵</div>
+    <div id="wideInfo">
+      <div id="wideSong">—</div>
+      <div id="wideArtist">—</div>
+      <div id="wideProgBar"><div id="wideProgFill"></div></div>
+    </div>
+    <div id="wideWave">
+      <span class="wb"></span><span class="wb"></span><span class="wb"></span>
+      <span class="wb"></span><span class="wb"></span><span class="wb"></span>
+      <span class="wb"></span><span class="wb"></span><span class="wb"></span>
+      <span class="wb"></span><span class="wb"></span><span class="wb"></span>
+      <span class="wb"></span><span class="wb"></span><span class="wb"></span>
+      <span class="wb"></span><span class="wb"></span><span class="wb"></span>
+      <span class="wb"></span><span class="wb"></span>
+    </div>
+    <div id="wideTime">??:?? / ??:??</div>
+  </div>
+
+</div>
+
+<script>
+let lastTrack = null
+let settings  = {}
+window._autoHide  = true
+window._cardStyle = 'standard'
+
+function fmt(sec) {
+  if (sec == null || isNaN(sec)) return '??:??'
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0')
+}
+
+function setAnimState(playing) {
+  const state = playing ? 'running' : 'paused'
+  document.querySelectorAll('#eq span').forEach(b => b.style.animationPlayState = state)
+  document.querySelectorAll('.wb').forEach(b => b.style.animationPlayState = state)
+}
+
+function applySettings(s) {
+  settings = s
+  const isWide = s.cardStyle === 'wide'
+  window._autoHide  = s.autoHide !== false
+  window._cardStyle = isWide ? 'wide' : 'standard'
+
+  const opHex  = Math.round((s.opacity ?? 88) * 2.55).toString(16).padStart(2,'0')
+  const bg     = (s.cardBg || '#0f0f14') + opHex
+  const radius = (s.borderRadius || 14) + 'px'
+  const accent = s.accentColor || '#7c5af0'
+  const scale  = (s.scale || 100) / 100
+  const font   = s.font || 'system-ui'
+
+  // 切換顯示哪個卡片
+  document.getElementById('card').style.display     = isWide ? 'none' : ''
+  document.getElementById('cardWide').style.display = isWide ? '' : 'none'
+
+  // 標準卡片
+  const card = document.getElementById('card')
+  card.style.cssText += ';background:' + bg + ';border-radius:' + radius + ';font-family:' + font
+  card.style.transformOrigin = 'bottom left'
+  document.getElementById('tag').style.color        = accent
+  document.getElementById('song').style.color       = s.textColor || '#fff'
+  document.getElementById('artist').style.color     = s.artistColor || '#aaa'
+  document.getElementById('progFill').style.background = accent
+  document.querySelectorAll('#eq span').forEach(b => b.style.background = accent)
+  document.getElementById('album').style.display    = s.showAlbum    !== false ? '' : 'none'
+  document.getElementById('progBar').style.display  = s.showProgress !== false ? 'block' : 'none'
+  document.getElementById('eq').style.display       = s.showEq       !== false ? 'flex' : 'none'
+  if (s.marquee) document.getElementById('info').classList.add('marquee')
+  else           document.getElementById('info').classList.remove('marquee')
+
+  // 寬版卡片
+  const cardWide = document.getElementById('cardWide')
+  cardWide.style.background      = bg
+  cardWide.style.borderRadius    = radius
+  cardWide.style.fontFamily      = font
+  cardWide.style.transformOrigin = 'bottom left'
+  document.getElementById('wideSong').style.color    = s.textColor || '#fff'
+  document.getElementById('wideArtist').style.color  = s.artistColor || '#aaa'
+  document.getElementById('wideProgFill').style.background = accent
+  document.getElementById('wideProgBar').style.display = s.showProgress !== false ? 'block' : 'none'
+  document.getElementById('wideTime').style.display    = s.showTime !== false ? '' : 'none'
+  document.querySelectorAll('.wb').forEach(b => b.style.background = accent)
+
+  applyPosition(s.position || 'bottom-left', s.padding ?? 24)
+}
+
+function applyPosition(pos, pad) {
+  const wrap = document.getElementById('wrap')
+  const p = pad + 'px'
+  const map = {
+    'bottom-left':   'bottom:' + p + ';left:' + p,
+    'bottom-right':  'bottom:' + p + ';right:' + p,
+    'top-left':      'top:' + p + ';left:' + p,
+    'top-right':     'top:' + p + ';right:' + p,
+    'bottom-center': 'bottom:' + p + ';left:50%;transform:translateX(-50%)',
+  }
+  wrap.style.cssText = 'position:fixed;' + (map[pos] || map['bottom-left'])
+}
+
+function updateAlbum(elId, albumArt) {
+  const al = document.getElementById(elId)
+  if (albumArt) {
+    let img = al.querySelector('img')
+    if (!img) {
+      al.textContent = ''
+      img = document.createElement('img')
+      img.alt = ''
+      al.appendChild(img)
+    }
+    img.src = albumArt
+    al.style.background = 'transparent'
+  } else {
+    al.textContent = '🎵'
+    al.style.background = 'linear-gradient(135deg,#7c5af0,#a855f7)'
+  }
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/track?' + Date.now())
+    const t = await r.json()
+    const scale   = (settings.scale || 100) / 100
+    const isWide  = window._cardStyle === 'wide'
+    const card     = document.getElementById('card')
+    const cardWide = document.getElementById('cardWide')
+    const active   = isWide ? cardWide : card
+
+    if (!t.playing) {
+      setAnimState(false)
+      if (window._autoHide) {
+        if (lastTrack?.playing !== false) active.classList.add('hidden')
+      } else {
+        active.classList.remove('hidden')
+        active.style.transform = 'scale(' + scale + ')'
+      }
+      lastTrack = t
+      return
+    }
+
+    active.classList.remove('hidden')
+    active.style.transform = 'scale(' + scale + ')'
+    setAnimState(true)
+
+    if (t.song !== lastTrack?.song || t.artist !== lastTrack?.artist) {
+      if (isWide) {
+        document.getElementById('wideSong').textContent   = t.song   || '—'
+        document.getElementById('wideArtist').textContent = t.artist || '—'
+        updateAlbum('wideAlbum', t.albumArt)
+      } else {
+        document.getElementById('song').textContent   = t.song   || '—'
+        document.getElementById('artist').textContent = t.artist || '—'
+        document.getElementById('tag').textContent    = t.source || 'Now Playing'
+        updateAlbum('album', t.albumArt)
+      }
+    }
+
+    if (t.duration) {
+      const pct = t.progress != null ? Math.round((t.progress / t.duration) * 100) : 0
+      document.getElementById('progFill').style.width     = pct + '%'
+      document.getElementById('wideProgFill').style.width = pct + '%'
+      document.getElementById('wideTime').textContent = fmt(t.progress) + ' / ' + fmt(t.duration)
+    } else {
+      document.getElementById('wideTime').textContent = '??:?? / ??:??'
+    }
+
+    lastTrack = t
+  } catch(e) {}
+}
+
+async function fetchSettings() {
+  try {
+    const r = await fetch('/settings?' + Date.now())
+    const s = await r.json()
+    applySettings(s)
+  } catch(e) {}
+}
+
+async function fetchCustomFont() {
+  try {
+    const r = await fetch('/customfont?' + Date.now())
+    if (!r.ok) return
+    const data = await r.json()
+    if (!data || !data.dataUrl) return
+    const style = document.createElement('style')
+    style.textContent = "@font-face { font-family: 'CustomFont'; src: url('" + data.dataUrl + "'); }"
+    document.head.appendChild(style)
+  } catch(e) {}
+}
+
+fetchCustomFont()
+fetchSettings()
+poll()
+setInterval(poll, 3000)
+setInterval(fetchSettings, 15000)
+</script>
+</body>
+</html>

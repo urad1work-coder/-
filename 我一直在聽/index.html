@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>NowPlaying</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f0f13; --panel: #1a1a22; --border: #2a2a38;
+    --accent: #7c5af0; --text: #e8e6f0; --muted: #666;
+    --success: #4ade80; --warning: #fb923c;
+    --font-mono: 'SF Mono', 'Fira Code', monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; user-select: none; }
+  .titlebar { -webkit-app-region: drag; height: 28px; background: var(--bg); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+  .titlebar-title { -webkit-app-region: no-drag; font-size: 12px; color: var(--muted); margin: 0 auto; }
+  .layout { display: grid; grid-template-columns: 240px 1fr; flex: 1; overflow: hidden; }
+  .sidebar { background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .sidebar-logo { padding: 14px 14px 10px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); }
+  .sidebar-logo-icon { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+  .sidebar-logo-text { font-size: 14px; font-weight: 600; }
+  .sidebar-logo-sub { font-size: 10px; color: var(--muted); }
+  .nav { padding: 8px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--muted); cursor: pointer; transition: all 0.15s; margin-bottom: 2px; }
+  .nav-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+  .nav-item.active { background: rgba(124,90,240,0.15); color: var(--accent); }
+  .nav-icon { font-size: 15px; width: 20px; text-align: center; }
+  .nav-divider { height: 1px; background: var(--border); margin: 6px 8px; }
+  .track-card { margin: 10px; border-radius: 12px; background: rgba(124,90,240,0.07); border: 1px solid rgba(124,90,240,0.18); padding: 10px 12px; }
+  .track-card-status { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+  .pulse.playing { animation: pulse 1.5s infinite; }
+  .pulse.inactive { background: #444; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .track-source { font-size: 9px; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
+  .track-song { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track-artist { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .obs-bar { padding: 10px; border-top: 1px solid var(--border); margin-top: auto; }
+  .obs-bar-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 5px; }
+  .obs-url-row { display: flex; align-items: center; gap: 6px; }
+  .obs-url-text { font-family: var(--font-mono); font-size: 10px; color: var(--accent); background: rgba(124,90,240,0.08); border: 1px solid rgba(124,90,240,0.2); border-radius: 5px; padding: 4px 7px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .copy-btn { padding: 4px 8px; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .main { display: flex; flex-direction: column; overflow: hidden; }
+  .page { display: none; flex: 1; overflow-y: auto; padding: 20px; }
+  .page.active { display: flex; flex-direction: column; }
+  .page-title { font-size: 16px; font-weight: 600; margin-bottom: 3px; }
+  .page-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+
+  /* Preview */
+  .preview-frame-wrap { flex: 1; background: #080810; border-radius: 12px; border: 1px solid var(--border); position: relative; overflow: hidden; min-height: 260px; }
+  .preview-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px); background-size: 40px 40px; }
+  .preview-obs-tag { position: absolute; top: 10px; right: 12px; font-size: 10px; background: rgba(124,90,240,0.2); border: 1px solid var(--accent); color: var(--accent); padding: 2px 8px; border-radius: 99px; letter-spacing: 1px; }
+  .preview-pos-tag { position: absolute; top: 10px; left: 12px; font-size: 10px; color: #444; text-transform: uppercase; letter-spacing: 1px; }
+
+  /* 標準卡片 */
+  .ov-card { position: absolute; transition: all 0.3s; }
+  .ov-card.pos-bl { bottom: 20px; left: 20px; }
+  .ov-card.pos-br { bottom: 20px; right: 20px; }
+  .ov-card.pos-tl { top: 20px; left: 20px; }
+  .ov-card.pos-tr { top: 20px; right: 20px; }
+  .ov-card.pos-bc { bottom: 20px; left: 50%; transform: translateX(-50%); }
+  .ov-inner { border-radius: 14px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; min-width: 220px; max-width: 320px; backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
+  .ov-album { width: 44px; height: 44px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; overflow: hidden; }
+  .ov-album img { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; }
+  .ov-info { flex: 1; min-width: 0; }
+  .ov-tag { font-size: 8px; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; opacity: 0.7; margin-bottom: 2px; }
+  .ov-song { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ov-artist { font-size: 11px; opacity: 0.6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ov-prog { margin-top: 6px; }
+  .ov-prog-bar { height: 2px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,0.1); }
+  .ov-prog-fill { height: 100%; border-radius: 99px; width: 40%; }
+  .ov-eq { display: flex; align-items: flex-end; gap: 2px; height: 16px; margin-left: 4px; flex-shrink: 0; }
+  .ov-eq span { width: 3px; border-radius: 2px; }
+  .eq1{height:8px;animation:eq 0.8s 0.0s ease-in-out infinite alternate}
+  .eq2{height:14px;animation:eq 0.8s 0.15s ease-in-out infinite alternate}
+  .eq3{height:10px;animation:eq 0.8s 0.05s ease-in-out infinite alternate}
+  .eq4{height:16px;animation:eq 0.8s 0.25s ease-in-out infinite alternate}
+  .eq5{height:7px;animation:eq 0.8s 0.10s ease-in-out infinite alternate}
+  @keyframes eq{from{transform:scaleY(0.35)}to{transform:scaleY(1)}}
+
+  /* 寬版卡片（預覽用） */
+  .ov-wide-card { position: absolute; bottom: 20px; left: 20px; display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 10px; border-radius: 14px; min-width: 280px; max-width: 420px; border: 1px solid rgba(255,255,255,0.08); }
+  .ov-wide-card.pos-br { bottom: 20px; left: auto; right: 20px; }
+  .ov-wide-card.pos-tl { bottom: auto; top: 20px; left: 20px; }
+  .ov-wide-card.pos-tr { bottom: auto; top: 20px; left: auto; right: 20px; }
+
+  /* Style page */
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .settings-section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .settings-section-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 10px; font-weight: 600; }
+  .field { margin-bottom: 10px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .field input[type=range] { width: 100%; accent-color: var(--accent); }
+  .field select { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+  .color-row { display: flex; align-items: center; gap: 8px; }
+  .color-row input[type=color] { width: 32px; height: 28px; border-radius: 5px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); padding: 1px; }
+  .color-row input[type=text] { flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; font-family: var(--font-mono); }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-row label { font-size: 12px; color: var(--text); }
+  .toggle { position: relative; display: inline-block; width: 34px; height: 18px; flex-shrink: 0; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; inset: 0; background: #333; border-radius: 18px; cursor: pointer; transition: 0.2s; }
+  .toggle-slider::before { content: ''; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #fff; left: 3px; top: 3px; transition: 0.2s; }
+  .toggle input:checked + .toggle-slider { background: var(--accent); }
+  .toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+  .theme-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }
+  .theme-chip { padding: 4px 12px; border-radius: 99px; font-size: 11px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--text); transition: all 0.15s; }
+  .theme-chip:hover { border-color: var(--accent); color: var(--accent); }
+  .pos-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; width: 100px; }
+  .pos-btn { height: 24px; border-radius: 5px; border: 1px solid var(--border); background: transparent; cursor: pointer; font-size: 12px; color: var(--muted); transition: all 0.15s; }
+  .pos-btn.sel { background: rgba(124,90,240,0.2); border-color: var(--accent); color: var(--accent); }
+  .btn-row { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
+  .btn { padding: 7px 16px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid; transition: all 0.15s; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-outline { background: transparent; border-color: var(--border); color: var(--text); }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+  .save-msg { font-size: 11px; color: var(--success); display: none; }
+  .source-tab { padding: 6px 14px; border-radius: 7px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all 0.15s; }
+  .source-tab.active { background: rgba(124,90,240,0.15); border-color: var(--accent); color: var(--accent); }
+  .info-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; font-size: 12px; color: var(--muted); line-height: 1.9; }
+  .field-block { margin-bottom: 10px; }
+  .field-block label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .field-block input { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 10px; font-size: 12px; }
+  .manual-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .config-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <span class="titlebar-title">我一直在聽</span>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">♪</div>
+      <div>
+        <div class="sidebar-logo-text">我一直在聽</div>
+        <div class="sidebar-logo-sub">by 1號</div>
+      </div>
+    </div>
+    <div class="nav">
+      <div class="nav-item active" onclick="showPage('preview',this)"><span class="nav-icon">▶</span> 預覽</div>
+      <div class="nav-item" onclick="showPage('style',this)"><span class="nav-icon">🎨</span> 外觀設定</div>
+      <div class="nav-item" onclick="showPage('source',this)"><span class="nav-icon">🎵</span> 音樂來源</div>
+      <div class="nav-item" onclick="showPage('config',this)"><span class="nav-icon">⚙</span> 應用設定</div>
+    </div>
+    <div class="nav-divider"></div>
+    <div class="track-card">
+      <div class="track-card-status">
+        <div class="pulse inactive" id="sidebarPulse"></div>
+        <span id="sidebarStatus">未偵測到音樂</span>
+      </div>
+      <div class="track-source" id="sidebarSource"></div>
+      <div class="track-song" id="sidebarSong">—</div>
+      <div class="track-artist" id="sidebarArtist">—</div>
+    </div>
+    <div class="obs-bar">
+      <div class="obs-bar-label">OBS Browser Source URL</div>
+      <div class="obs-url-row">
+        <div class="obs-url-text" id="obsUrlSidebar">http://127.0.0.1:3456/</div>
+        <button class="copy-btn" onclick="copyObsUrl()">複製</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- 預覽頁 -->
+    <div class="page active" id="page-preview">
+      <div class="page-title">預覽</div>
+      <div class="page-sub">這是 OBS Browser Source 實際顯示的樣子</div>
+      <div class="preview-frame-wrap">
+        <div class="preview-grid"></div>
+        <div class="preview-obs-tag">OBS BROWSER SOURCE</div>
+        <div class="preview-pos-tag">16:9 CANVAS</div>
+
+        <!-- 標準卡片 -->
+        <div class="ov-card pos-bl" id="ovCard">
+          <div class="ov-inner" id="ovInner" style="background:rgba(15,15,20,0.88)">
+            <div class="ov-album" id="ovAlbum" style="background:linear-gradient(135deg,#7c5af0,#a855f7)">🎵</div>
+            <div class="ov-info">
+              <div class="ov-tag" id="ovTag" style="color:#7c5af0">Now Playing</div>
+              <div class="ov-song" id="ovSong" style="color:#fff">等待音樂…</div>
+              <div class="ov-artist" id="ovArtist" style="color:#aaa">—</div>
+              <div class="ov-prog" id="ovProgWrap">
+                <div class="ov-prog-bar">
+                  <div class="ov-prog-fill" id="ovProgFill" style="background:#7c5af0"></div>
+                </div>
+              </div>
+            </div>
+            <div class="ov-eq" id="ovEq">
+              <span class="eq1" style="background:#7c5af0"></span>
+              <span class="eq2" style="background:#7c5af0"></span>
+              <span class="eq3" style="background:#7c5af0"></span>
+              <span class="eq4" style="background:#7c5af0"></span>
+              <span class="eq5" style="background:#7c5af0"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 寬版卡片（與標準卡片並排，不是巢狀） -->
+        <div class="ov-wide-card" id="ovCardWide" style="display:none;background:rgba(15,15,20,0.88)">
+          <div id="ovWideAlbum" style="width:52px;height:52px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:24px;overflow:hidden;background:linear-gradient(135deg,#7c5af0,#a855f7)">🎵</div>
+          <div style="flex:1;min-width:0;margin-right:10px">
+            <div id="ovWideSong" style="font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">等待音樂…</div>
+            <div id="ovWideArtist" style="font-size:11px;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">—</div>
+          </div>
+          <div id="ovWideWave" style="display:flex;align-items:center;gap:2px;height:32px;flex-shrink:0">
+            <span style="width:2px;border-radius:1px;height:6px;background:#7c5af0;animation:eq 0.6s 0.00s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:14px;background:#7c5af0;animation:eq 0.6s 0.05s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:22px;background:#7c5af0;animation:eq 0.6s 0.10s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:10px;background:#7c5af0;animation:eq 0.6s 0.15s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:28px;background:#7c5af0;animation:eq 0.6s 0.20s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:18px;background:#7c5af0;animation:eq 0.6s 0.25s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:8px;background:#7c5af0;animation:eq 0.6s 0.08s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:24px;background:#7c5af0;animation:eq 0.6s 0.12s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:16px;background:#7c5af0;animation:eq 0.6s 0.18s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:30px;background:#7c5af0;animation:eq 0.6s 0.22s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:12px;background:#7c5af0;animation:eq 0.6s 0.03s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:20px;background:#7c5af0;animation:eq 0.6s 0.16s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:26px;background:#7c5af0;animation:eq 0.6s 0.09s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:8px;background:#7c5af0;animation:eq 0.6s 0.24s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:18px;background:#7c5af0;animation:eq 0.6s 0.06s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:28px;background:#7c5af0;animation:eq 0.6s 0.14s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:12px;background:#7c5af0;animation:eq 0.6s 0.19s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:22px;background:#7c5af0;animation:eq 0.6s 0.07s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:16px;background:#7c5af0;animation:eq 0.6s 0.23s ease-in-out infinite alternate"></span>
+            <span style="width:2px;border-radius:1px;height:6px;background:#7c5af0;animation:eq 0.6s 0.11s ease-in-out infinite alternate"></span>
+          </div>
+          <div id="ovWideTime" style="font-size:11px;color:#aaa;white-space:nowrap;margin-left:10px;display:none;font-variant-numeric:tabular-nums">??:?? / ??:??</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 外觀設定頁 -->
+    <div class="page" id="page-style">
+      <div class="page-title">外觀設定</div>
+      <div class="page-sub">調整卡片樣式，即時預覽效果</div>
+      <div class="theme-chips">
+        <button class="theme-chip" onclick="applyTheme('dark')">深色</button>
+        <button class="theme-chip" onclick="applyTheme('light')">淺色</button>
+        <button class="theme-chip" onclick="applyTheme('neon')">霓虹</button>
+        <button class="theme-chip" onclick="applyTheme('sunset')">夕陽</button>
+        <button class="theme-chip" onclick="applyTheme('transparent')">透明</button>
+      </div>
+      <div class="settings-grid">
+
+        <div class="settings-section" style="grid-column:1/-1">
+          <div class="settings-section-title">卡片樣式</div>
+          <div style="display:flex;gap:8px">
+            <button class="theme-chip" id="styleStandard" onclick="setCardStyle('standard')" style="border-color:var(--accent);color:var(--accent)">標準</button>
+            <button class="theme-chip" id="styleWide" onclick="setCardStyle('wide')">寬版</button>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">顏色</div>
+          <div class="field">
+            <label>NOW PLAYING顏色</label>
+            <div class="color-row">
+              <input type="color" id="cfgAccentPicker" oninput="syncColor('cfgAccentPicker','cfgAccent')">
+              <input type="text" id="cfgAccent" value="#7c5af0" oninput="syncColor('cfgAccent','cfgAccentPicker');liveUpdate()">
+            </div>
+          </div>
+          <div class="field">
+            <label>歌名顏色</label>
+            <div class="color-row">
+              <input type="color" id="cfgTextPicker" oninput="syncColor('cfgTextPicker','cfgText')">
+              <input type="text" id="cfgText" value="#ffffff" oninput="syncColor('cfgText','cfgTextPicker');liveUpdate()">
+            </div>
+          </div>
+          <div class="field">
+            <label>卡片背景</label>
+            <div class="color-row">
+              <input type="color" id="cfgCardBgPicker" oninput="syncColor('cfgCardBgPicker','cfgCardBg')">
+              <input type="text" id="cfgCardBg" value="#0f0f14" oninput="syncColor('cfgCardBg','cfgCardBgPicker');liveUpdate()">
+            </div>
+          </div>
+          <div class="field">
+            <label>透明度 <span id="opacityLabel">88</span>%</label>
+            <input type="range" id="cfgOpacity" min="0" max="100" value="88" oninput="document.getElementById('opacityLabel').textContent=this.value;liveUpdate()">
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">版面</div>
+          <div class="field">
+            <label>圓角 <span id="radiusLabel">14</span>px</label>
+            <input type="range" id="cfgRadius" min="0" max="30" value="14" oninput="document.getElementById('radiusLabel').textContent=this.value;liveUpdate()">
+          </div>
+          <div class="field">
+            <label>縮放 <span id="scaleLabel">100</span>%</label>
+            <input type="range" id="cfgScale" min="50" max="200" value="100" oninput="document.getElementById('scaleLabel').textContent=this.value;liveUpdate()">
+          </div>
+          <div class="field">
+            <label>字體</label>
+            <select id="cfgFont" onchange="liveUpdate()">
+              <option value="system-ui">系統預設</option>
+              <option value="'Noto Sans TC',sans-serif">Noto Sans TC</option>
+              <option value="'Inter',sans-serif">Inter</option>
+              <option value="monospace">Monospace</option>
+              <option value="'CustomFont',system-ui" id="customFontOption" style="display:none">自訂字體</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>自訂字體</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <span id="customFontName" style="flex:1;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">尚未匯入</span>
+              <button class="copy-btn" onclick="importFont()">選擇檔案</button>
+              <button class="copy-btn" id="btnRemoveFont" onclick="removeFont()" style="display:none">移除</button>
+            </div>
+            <div style="font-size:10px;color:#555;margin-top:4px">支援 TTF、OTF、WOFF、WOFF2</div>
+          </div>
+          <div class="field" style="margin-top:6px">
+            <label>卡片位置</label>
+            <div class="pos-grid" style="margin-top:6px">
+              <button class="pos-btn" onclick="setPos(this,'tl')">↖</button>
+              <button class="pos-btn" onclick="setPos(this,'tc')">↑</button>
+              <button class="pos-btn" onclick="setPos(this,'tr')">↗</button>
+              <div></div><div></div><div></div>
+              <button class="pos-btn sel" onclick="setPos(this,'bl')">↙</button>
+              <button class="pos-btn" onclick="setPos(this,'bc')">↓</button>
+              <button class="pos-btn" onclick="setPos(this,'br')">↘</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="settings-section-title">顯示元素</div>
+          <div class="toggle-row">
+            <label>專輯封面</label>
+            <label class="toggle"><input type="checkbox" id="cfgAlbum" checked onchange="liveUpdate()"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <label>進度條</label>
+            <label class="toggle"><input type="checkbox" id="cfgProgress" checked onchange="liveUpdate()"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <label>EQ 動畫</label>
+            <label class="toggle"><input type="checkbox" id="cfgEq" checked onchange="liveUpdate()"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <label>跑馬燈效果</label>
+            <label class="toggle"><input type="checkbox" id="cfgMarquee" onchange="liveUpdate()"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <label>沒有播放時自動隱藏</label>
+            <label class="toggle"><input type="checkbox" id="cfgAutoHide" checked onchange="liveUpdate()"><span class="toggle-slider"></span></label>
+          </div>
+          <div class="toggle-row">
+            <label>時間顯示（寬版）</label>
+            <label class="toggle"><input type="checkbox" id="cfgTime" checked onchange="liveUpdate()"><span class="toggle-slider"></span></label>
+          </div>
+        </div>
+
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveStyle()">儲存設定</button>
+        <button class="btn btn-outline" onclick="resetStyle()">重置</button>
+        <span class="save-msg" id="saveMsg">✓ 已儲存</span>
+      </div>
+    </div>
+
+    <!-- 音樂來源頁 -->
+    <div class="page" id="page-source">
+      <div id="serviceTabs" style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 20px 10px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:10">
+        <button class="source-tab" id="stab-ytmusic" onclick="openService('https://music.youtube.com',this)">▶ YouTube Music</button>
+        <button class="source-tab" id="stab-youtube" onclick="openService('https://www.youtube.com',this)">▶ YouTube</button>
+        <div style="flex:1"></div>
+        <button class="copy-btn" onclick="api.playerBack()" title="上一頁">←</button>
+        <button class="copy-btn" onclick="api.playerRefresh()" title="重新整理">↺</button>
+        <button class="copy-btn" id="btnTogglePlayer" onclick="togglePlayer()" style="display:none">顯示瀏覽器</button>
+        <button class="copy-btn" id="btnHidePlayer" onclick="togglePlayer()" style="display:none">隱藏瀏覽器</button>
+      </div>
+      <div id="playerPlaceholder" style="flex:1;background:#080810;display:flex;align-items:center;justify-content:center">
+        <div id="playerHint" style="text-align:center;color:var(--muted);font-size:13px;line-height:2">
+          點上方按鈕選擇服務<br>
+          <span style="font-size:11px">登入一次後自動保存，下次開 APP 不需要重新登入</span>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding:12px 20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:6px" onclick="toggleManual()">
+          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">手動輸入（備用）</span>
+          <span id="manualArrow" style="color:var(--muted);font-size:10px">▼</span>
+        </div>
+        <div id="manualBody" style="display:none">
+          <div class="field-block">
+            <label>歌名</label>
+            <input type="text" id="manualSong" placeholder="例：Blinding Lights">
+          </div>
+          <div class="field-block" style="margin-top:6px">
+            <label>歌手</label>
+            <input type="text" id="manualArtist" placeholder="例：The Weeknd">
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="submitManual()">顯示</button>
+            <button class="btn btn-outline" onclick="clearManual()">清除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 應用設定頁 -->
+    <div class="page" id="page-config">
+      <div class="page-title">應用設定</div>
+      <div class="page-sub">連接埠設定</div>
+      <div class="config-card">
+        <div class="field-block">
+          <label>連接埠（預設 3456）</label>
+          <input type="number" id="cfgPort" value="3456" min="1024" max="65535" style="width:140px">
+        </div>
+        <div class="field-block" style="margin-top:10px">
+          <label>API Key（外部控制用）</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="cfgApiKey" readonly style="flex:1;color:var(--accent);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:11px;font-family:var(--font-mono)">
+            <button class="copy-btn" onclick="copyApiKey()">複製</button>
+          </div>
+          <div style="font-size:10px;color:#555;margin-top:4px">POST 請求需在 header 加上 x-api-key: [此 key]</div>
+        </div>
+        <div class="field-block" style="margin-top:10px">
+          <label>IP 白名單</label>
+          <div style="font-size:10px;color:#555;margin-bottom:6px">127.0.0.1 永遠允許，不需要加入</div>
+          <div id="ipList" style="margin-bottom:8px"></div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="newIp" placeholder="例：192.168.1.100" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px">
+            <button class="copy-btn" onclick="addIp()">新增</button>
+          </div>
+        </div>
+        <div class="field-block">
+          <label>OBS Browser Source URL</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="cfgObsUrl" readonly style="flex:1;color:var(--accent);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px">
+            <button class="copy-btn" onclick="copyObsUrl()">複製</button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="saveAppConfig()">儲存（重啟後生效）</button>
+          <span class="save-msg" id="saveConfigMsg">✓ 已儲存</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let currentTrack   = null
+let overlayUrl     = 'http://127.0.0.1:3456/'
+let currentPos     = 'bl'
+let currentCardStyle = 'standard'
+let playerVisible  = false
+let manualOpen     = false
+let ipWhitelist = []
+
+async function loadIpWhitelist() {
+  ipWhitelist = await window.api.getIpWhitelist()
+  renderIpList()
+}
+
+function renderIpList() {
+  const container = document.getElementById('ipList')
+  container.innerHTML = ''
+  ipWhitelist.filter(ip => ip !== '127.0.0.1' && ip !== '::1').forEach(ip => {
+    const row = document.createElement('div')
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:4px'
+    row.innerHTML = `<span style="flex:1;font-size:12px;color:var(--text);font-family:var(--font-mono)">${ip}</span><button class="copy-btn" onclick="removeIp('${ip}')">移除</button>`
+    container.appendChild(row)
+  })
+}
+
+async function addIp() {
+  const ip = document.getElementById('newIp').value.trim()
+  if (!ip) return
+  if (!ipWhitelist.includes(ip)) {
+    ipWhitelist.push(ip)
+    await window.api.setIpWhitelist(ipWhitelist)
+    renderIpList()
+  }
+  document.getElementById('newIp').value = ''
+}
+
+async function removeIp(ip) {
+  ipWhitelist = ipWhitelist.filter(i => i !== ip)
+  await window.api.setIpWhitelist(ipWhitelist)
+  renderIpList()
+}
+
+// ── 初始化 ──────────────────────────────────────────────────────
+async function init() {
+  const [settings, config] = await Promise.all([window.api.getSettings(), window.api.getConfig()])
+  overlayUrl = await window.api.getOverlayUrl()
+  document.getElementById('obsUrlSidebar').textContent = overlayUrl
+  document.getElementById('cfgObsUrl').value = overlayUrl
+  document.getElementById('cfgPort').value = config.port
+  applySettingsToUI(settings)
+  const apiKey = await window.api.getApiKey()
+  document.getElementById('cfgApiKey').value = apiKey
+  liveUpdate()
+
+  if (config.customFont) {
+    loadCustomFont(config.customFont.dataUrl)
+    document.getElementById('customFontOption').style.display = ''
+    document.getElementById('cfgFont').value = "'CustomFont',system-ui"
+    document.getElementById('customFontName').textContent = config.customFont.name
+    document.getElementById('customFontName').style.color = 'var(--text)'
+    document.getElementById('btnRemoveFont').style.display = ''
+  }
+
+  window.api.onTrackUpdate(track => {
+    currentTrack = track
+    updateSidebarTrack(track)
+    updateOverlayPreview(track)
+  })
+  setInterval(async () => {
+    const t = await window.api.getCurrentTrack()
+    if (t) { currentTrack = t; updateSidebarTrack(t); updateOverlayPreview(t) }
+  }, 3000)
+  loadIpWhitelist()
+}
+
+// ── 頁面切換 ─────────────────────────────────────────────────────
+function showPage(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
+  document.getElementById('page-' + id).classList.add('active')
+  el.classList.add('active')
+  if (id === 'source' && playerVisible) {
+    requestAnimationFrame(() => { setPlayerBounds(); api.showPlayer(true) })
+  } else {
+    api.showPlayer(false)
+  }
+}
+
+// ── 側邊欄更新 ───────────────────────────────────────────────────
+function updateSidebarTrack(t) {
+  const pulse  = document.getElementById('sidebarPulse')
+  const status = document.getElementById('sidebarStatus')
+  const source = document.getElementById('sidebarSource')
+  const song   = document.getElementById('sidebarSong')
+  const artist = document.getElementById('sidebarArtist')
+  if (t && t.playing && t.song) {
+    pulse.className = 'pulse playing'
+    status.textContent = '正在播放'
+    source.textContent = t.source || ''
+    song.textContent   = t.song
+    artist.textContent = t.artist || '—'
+  } else {
+    pulse.className = 'pulse inactive'
+    status.textContent = '未偵測到音樂'
+    source.textContent = ''
+    song.textContent   = '—'
+    artist.textContent = '—'
+  }
+}
+
+// ── 預覽更新 ─────────────────────────────────────────────────────
+function updateOverlayPreview(t) {
+  if (!t || !t.playing || !t.song) return
+  // 標準卡片
+  document.getElementById('ovTag').textContent    = t.source || 'Now Playing'
+  document.getElementById('ovSong').textContent   = t.song
+  document.getElementById('ovArtist').textContent = t.artist || ''
+  const al = document.getElementById('ovAlbum')
+  if (t.albumArt) {
+    let img = al.querySelector('img')
+    if (!img) { al.textContent = ''; img = document.createElement('img'); al.appendChild(img) }
+    img.src = t.albumArt
+    al.style.background = 'transparent'
+  } else {
+    al.textContent = '🎵'
+    al.style.background = 'linear-gradient(135deg,#7c5af0,#a855f7)'
+  }
+  // 寬版卡片
+  document.getElementById('ovWideSong').textContent   = t.song
+  document.getElementById('ovWideArtist').textContent = t.artist || ''
+  const alw = document.getElementById('ovWideAlbum')
+  if (t.albumArt) {
+    let img = alw.querySelector('img')
+    if (!img) { alw.textContent = ''; img = document.createElement('img'); img.style.cssText = 'width:44px;height:44px;border-radius:8px;object-fit:cover'; alw.appendChild(img) }
+    img.src = t.albumArt
+    alw.style.background = 'transparent'
+  } else {
+    alw.textContent = '🎵'
+    alw.style.background = 'linear-gradient(135deg,#7c5af0,#a855f7)'
+  }
+}
+
+// ── 外觀設定 ─────────────────────────────────────────────────────
+function applySettingsToUI(s) {
+  document.getElementById('cfgAccent').value       = s.accentColor  || '#7c5af0'
+  document.getElementById('cfgAccentPicker').value = s.accentColor  || '#7c5af0'
+  document.getElementById('cfgText').value         = s.textColor    || '#ffffff'
+  document.getElementById('cfgTextPicker').value   = s.textColor    || '#ffffff'
+  document.getElementById('cfgCardBg').value       = s.cardBg       || '#0f0f14'
+  document.getElementById('cfgCardBgPicker').value = s.cardBg       || '#0f0f14'
+  document.getElementById('cfgOpacity').value      = s.opacity      ?? 88
+  document.getElementById('opacityLabel').textContent = s.opacity   ?? 88
+  document.getElementById('cfgRadius').value       = s.borderRadius ?? 14
+  document.getElementById('radiusLabel').textContent  = s.borderRadius ?? 14
+  document.getElementById('cfgScale').value        = s.scale        ?? 100
+  document.getElementById('scaleLabel').textContent   = s.scale     ?? 100
+  document.getElementById('cfgFont').value         = s.font         || 'system-ui'
+  document.getElementById('cfgAlbum').checked      = s.showAlbum    !== false
+  document.getElementById('cfgProgress').checked   = s.showProgress !== false
+  document.getElementById('cfgEq').checked         = s.showEq       !== false
+  document.getElementById('cfgMarquee').checked    = !!s.marquee
+  document.getElementById('cfgAutoHide').checked   = s.autoHide     !== false
+  document.getElementById('cfgTime').checked       = s.showTime     !== false
+  if (s.cardStyle) setCardStyle(s.cardStyle)
+}
+
+function syncColor(from, to) {
+  document.getElementById(to).value = document.getElementById(from).value
+  liveUpdate()
+}
+
+function liveUpdate() {
+  const accent       = document.getElementById('cfgAccent').value
+  const textCol      = document.getElementById('cfgText').value
+  const cardBg       = document.getElementById('cfgCardBg').value
+  const opacity      = parseInt(document.getElementById('cfgOpacity').value)
+  const radius       = document.getElementById('cfgRadius').value
+  const scale        = document.getElementById('cfgScale').value
+  const showAlbum    = document.getElementById('cfgAlbum').checked
+  const showProgress = document.getElementById('cfgProgress').checked
+  const showEq       = document.getElementById('cfgEq').checked
+  const showTime     = document.getElementById('cfgTime').checked
+  const opHex = Math.round(opacity * 2.55).toString(16).padStart(2,'0')
+  const isWide = currentCardStyle === 'wide'
+
+  // 標準卡片
+  const inner = document.getElementById('ovInner')
+  inner.style.background      = cardBg + opHex
+  inner.style.borderRadius    = radius + 'px'
+  inner.style.fontFamily      = document.getElementById('cfgFont').value
+  inner.style.transform       = 'scale(' + (scale/100) + ')'
+  inner.style.transformOrigin = 'bottom left'
+  document.getElementById('ovTag').style.color       = accent
+  document.getElementById('ovSong').style.color      = textCol
+  document.getElementById('ovProgFill').style.background = accent
+  document.querySelectorAll('.ov-eq span').forEach(b => b.style.background = accent)
+  document.getElementById('ovAlbum').style.display    = showAlbum    ? '' : 'none'
+  document.getElementById('ovProgWrap').style.display = showProgress ? '' : 'none'
+  document.getElementById('ovEq').style.display       = showEq       ? 'flex' : 'none'
+
+  // 寬版卡片
+  const wideCard = document.getElementById('ovCardWide')
+  wideCard.style.background   = cardBg + opHex
+  wideCard.style.borderRadius = radius + 'px'
+  wideCard.style.fontFamily   = document.getElementById('cfgFont').value
+  wideCard.style.transform    = 'scale(' + (scale/100) + ')'
+  wideCard.style.transformOrigin = 'bottom left'
+  document.getElementById('ovWideSong').style.color   = textCol
+  document.getElementById('ovWideArtist').style.color = textCol
+  document.getElementById('ovWideTime').style.display = showTime ? '' : 'none'
+  document.querySelectorAll('#ovWideWave span').forEach(b => b.style.background = accent)
+
+  // 切換顯示哪個卡片
+  document.getElementById('ovCard').style.display     = isWide ? 'none' : ''
+  document.getElementById('ovCardWide').style.display = isWide ? '' : 'none'
+}
+
+function setCardStyle(style) {
+  currentCardStyle = style
+  document.getElementById('styleStandard').style.borderColor = style === 'standard' ? 'var(--accent)' : ''
+  document.getElementById('styleStandard').style.color       = style === 'standard' ? 'var(--accent)' : ''
+  document.getElementById('styleWide').style.borderColor     = style === 'wide' ? 'var(--accent)' : ''
+  document.getElementById('styleWide').style.color           = style === 'wide' ? 'var(--accent)' : ''
+  liveUpdate()
+}
+
+function applyTheme(name) {
+  const themes = {
+    dark:        { accent:'#7c5af0', text:'#ffffff', bg:'#0f0f14', opacity:88 },
+    light:       { accent:'#5b21b6', text:'#1a1a2e', bg:'#f5f5ff', opacity:92 },
+    neon:        { accent:'#00ffcc', text:'#e0ffe0', bg:'#001a14', opacity:90 },
+    sunset:      { accent:'#fb923c', text:'#fff7ed', bg:'#1a0f05', opacity:90 },
+    transparent: { accent:'#ffffff', text:'#ffffff', bg:'#000000', opacity:0  },
+  }
+  const t = themes[name]; if (!t) return
+  document.getElementById('cfgAccent').value       = t.accent
+  document.getElementById('cfgAccentPicker').value = t.accent
+  document.getElementById('cfgText').value         = t.text
+  document.getElementById('cfgTextPicker').value   = t.text
+  document.getElementById('cfgCardBg').value       = t.bg
+  document.getElementById('cfgCardBgPicker').value = t.bg
+  document.getElementById('cfgOpacity').value      = t.opacity
+  document.getElementById('opacityLabel').textContent = t.opacity
+  liveUpdate()
+}
+
+function setPos(el, pos) {
+  document.querySelectorAll('.pos-btn').forEach(b => b.classList.remove('sel'))
+  el.classList.add('sel')
+  currentPos = pos
+  const card = document.getElementById('ovCard')
+  card.className = 'ov-card'
+  const map = { tl:'pos-tl', tr:'pos-tr', bl:'pos-bl', br:'pos-br', bc:'pos-bc', tc:'pos-tl' }
+  card.classList.add(map[pos] || 'pos-bl')
+  // 同步寬版卡片位置
+  const wideMap = { tl:'pos-tl', tr:'pos-tr', bl:'', br:'pos-br', bc:'', tc:'pos-tl' }
+  const wideCard = document.getElementById('ovCardWide')
+  wideCard.className = 'ov-wide-card'
+  if (wideMap[pos]) wideCard.classList.add(wideMap[pos])
+}
+
+// ── 字體 ─────────────────────────────────────────────────────────
+async function importFont() {
+  const result = await api.importFont()
+  if (!result) return
+  loadCustomFont(result.dataUrl)
+  document.getElementById('customFontOption').style.display = ''
+  document.getElementById('cfgFont').value = "'CustomFont',system-ui"
+  document.getElementById('customFontName').textContent = result.name
+  document.getElementById('customFontName').style.color = 'var(--text)'
+  document.getElementById('btnRemoveFont').style.display = ''
+  liveUpdate()
+}
+
+async function removeFont() {
+  await api.removeFont()
+  document.getElementById('customFontStyle')?.remove()
+  document.getElementById('customFontOption').style.display = 'none'
+  document.getElementById('cfgFont').value = 'system-ui'
+  document.getElementById('customFontName').textContent = '尚未匯入'
+  document.getElementById('customFontName').style.color = 'var(--muted)'
+  document.getElementById('btnRemoveFont').style.display = 'none'
+  liveUpdate()
+}
+
+function loadCustomFont(dataUrl) {
+  document.getElementById('customFontStyle')?.remove()
+  const style = document.createElement('style')
+  style.id = 'customFontStyle'
+  style.textContent = "@font-face { font-family: 'CustomFont'; src: url('" + dataUrl + "'); }"
+  document.head.appendChild(style)
+}
+
+// ── 儲存設定 ─────────────────────────────────────────────────────
+async function saveStyle() {
+  const posMap = { tl:'top-left', tr:'top-right', bl:'bottom-left', br:'bottom-right', bc:'bottom-center', tc:'top-center' }
+  const s = {
+    accentColor:  document.getElementById('cfgAccent').value,
+    textColor:    document.getElementById('cfgText').value,
+    cardBg:       document.getElementById('cfgCardBg').value,
+    opacity:      parseInt(document.getElementById('cfgOpacity').value),
+    borderRadius: parseInt(document.getElementById('cfgRadius').value),
+    scale:        parseInt(document.getElementById('cfgScale').value),
+    font:         document.getElementById('cfgFont').value,
+    showAlbum:    document.getElementById('cfgAlbum').checked,
+    showProgress: document.getElementById('cfgProgress').checked,
+    showEq:       document.getElementById('cfgEq').checked,
+    marquee:      document.getElementById('cfgMarquee').checked,
+    autoHide:     document.getElementById('cfgAutoHide').checked,
+    showTime:     document.getElementById('cfgTime').checked,
+    cardStyle:    currentCardStyle,
+    position:     posMap[currentPos] || 'bottom-left',
+    padding:      24,
+  }
+  await window.api.saveSettings(s)
+  const msg = document.getElementById('saveMsg')
+  msg.style.display = 'inline'
+  setTimeout(() => msg.style.display = 'none', 2000)
+}
+
+function resetStyle() {
+  applyTheme('dark')
+  document.getElementById('cfgRadius').value = 14; document.getElementById('radiusLabel').textContent = 14
+  document.getElementById('cfgScale').value  = 100; document.getElementById('scaleLabel').textContent = 100
+  document.getElementById('cfgFont').value   = 'system-ui'
+  document.getElementById('cfgAlbum').checked    = true
+  document.getElementById('cfgProgress').checked = true
+  document.getElementById('cfgEq').checked       = true
+  document.getElementById('cfgMarquee').checked  = false
+  document.getElementById('cfgAutoHide').checked = true
+  document.getElementById('cfgTime').checked     = true
+  setCardStyle('standard')
+}
+
+// ── 音樂來源 ─────────────────────────────────────────────────────
+function openService(url, btn) {
+  document.querySelectorAll('.source-tab').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  document.getElementById('playerHint').style.display = 'none'
+  api.loadPlayerUrl(url)
+  setPlayerBounds()
+  if (!playerVisible) {
+    playerVisible = true
+    api.showPlayer(true)
+    document.getElementById('btnTogglePlayer').style.display = 'none'
+    document.getElementById('btnHidePlayer').style.display = ''
+  }
+}
+
+function togglePlayer() {
+  playerVisible = !playerVisible
+  if (playerVisible) setPlayerBounds()
+  api.showPlayer(playerVisible)
+  document.getElementById('btnTogglePlayer').style.display = playerVisible ? 'none' : ''
+  document.getElementById('btnHidePlayer').style.display   = playerVisible ? '' : 'none'
+}
+
+function setPlayerBounds() {
+  const tabs = document.getElementById('serviceTabs')
+  const rect = tabs.getBoundingClientRect()
+  api.setPlayerOffset(Math.round(rect.bottom))
+}
+
+function toggleManual() {
+  manualOpen = !manualOpen
+  document.getElementById('manualBody').style.display = manualOpen ? '' : 'none'
+  document.getElementById('manualArrow').textContent  = manualOpen ? '▲' : '▼'
+}
+
+async function submitManual() {
+  const song     = document.getElementById('manualSong').value.trim()
+  const artist   = document.getElementById('manualArtist').value.trim()
+  if (!song) return
+  await window.api.setManualTrack({ song, artist, albumArt: null })
+}
+
+async function clearManual() {
+  await window.api.setManualTrack({ song: '', artist: '', albumArt: null })
+  document.getElementById('manualSong').value   = ''
+  document.getElementById('manualArtist').value = ''
+}
+
+async function saveAppConfig() {
+  const port = parseInt(document.getElementById('cfgPort').value) || 3456
+  await window.api.saveConfig({ port })
+  overlayUrl = 'http://127.0.0.1:' + port + '/'
+  document.getElementById('obsUrlSidebar').textContent = overlayUrl
+  document.getElementById('cfgObsUrl').value = overlayUrl
+  const msg = document.getElementById('saveConfigMsg')
+  msg.style.display = 'inline'
+  setTimeout(() => msg.style.display = 'none', 3000)
+}
+
+function copyObsUrl() { navigator.clipboard.writeText(overlayUrl) }
+function copyApiKey() {
+  navigator.clipboard.writeText(document.getElementById('cfgApiKey').value)
+}
+
+init()
+</script>
+</body>
+</html>

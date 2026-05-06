@@ -1,0 +1,26 @@
+{
+  "name": "nowplaying-app",
+  "version": "1.1.1",
+  "description": "直播音樂顯示器",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.nowplaying.app",
+    "productName": "我一直在聽",
+    "directories": { "output": "dist" },
+    "files": ["main.js","preload.js","index.html","overlay.html","assets/**"],
+    "win": { "target": "nsis", "icon": "assets/icon.ico" },
+    "mac": { "target": "dmg", "icon": "assets/icon.icns" }
+  }
+}
